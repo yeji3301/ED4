@@ -481,9 +481,9 @@
     }
   })();
   // iOS는 터치(손을 뗄 때)가 있어야 소리를 켤 수 있고, 앱을 내렸다 올리면 소리가 다시 멈춤
-  // → 소리가 꺼져 있으면 터치할 때마다 다시 켬. 무음 스위치가 켜져 있어도 게임 소리는 나게 함
+  // → 소리가 꺼져 있으면 터치할 때마다 다시 켬. 무음 모드(벨소리 끔)에서는 게임 소리도 끔
   function ensureAudio() {
-    try { if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback"; } catch (e) {}
+    try { if (navigator.audioSession && navigator.audioSession.type !== "ambient") navigator.audioSession.type = "ambient"; } catch (e) {}
     if (!actx) { primeAudio(); return; }
     if (actx.state !== "running") {
       try {
@@ -591,7 +591,7 @@
   function primeAudio() {
     if (actx) { actx.resume && actx.resume(); return; }
     try {
-      try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
+      try { if (navigator.audioSession) navigator.audioSession.type = "ambient"; } catch (e) {}
       const AC = window.AudioContext || window.webkitAudioContext;
       actx = new AC();
       gain = actx.createGain(); gain.gain.value = soundOn ? 1 : 0; gain.connect(actx.destination);
