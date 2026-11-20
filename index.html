@@ -374,6 +374,7 @@
   }
   const prefs = (() => { try { return JSON.parse(localStorage.getItem("ed4-prefs") || "{}"); } catch (e) { return {}; } })();
   const useX = prefs.engine !== "classic";
+  let xActive = useX;
   document.body.classList.toggle("classic", !useX);
   function savePrefs() { try { localStorage.setItem("ed4-prefs", JSON.stringify(prefs)); } catch (e) {} }
   let launchNo = 0;
@@ -728,8 +729,21 @@
       }
       window.__layout = layout;
       if (!gameBytes.files) { const changes = await kvGet("changes"); if (changes && changes.length) init.push(changes); }
-      const engine = (useX ? emulators.dosboxXWorker : emulators.dosboxWorker).bind(emulators);
-      window.__engine = useX ? "dosbox-x" : "dosbox";
+      // 엔진 파일을 못 받으면 한 번 더 받아 보고, 그래도 안 되면 기본 엔진으로 실행
+      const engine = async (a, o) => {
+        for (let k = 0; k < 3; k++) {
+          const x = useX && k < 2;
+          window.__engine = x ? "dosbox-x" : "dosbox"; xActive = x;
+          document.body.classList.toggle("classic", !x);
+          try { return await (x ? emulators.dosboxXWorker : emulators.dosboxWorker).call(emulators, a, o); }
+          catch (e) {
+            if (k === 2 || !/download/i.test(String(e && e.message || e))) throw e;
+            $("#loading").textContent = "엔진 파일 다시 받는 중…";
+            if (k === 1 && useX) toast("퀵세이브 엔진을 받지 못해 기본 엔진으로 실행해요", 3000);
+            await new Promise(r => setTimeout(r, 1500));
+          }
+        }
+      };
       ci = await engine(init, {
         onExtractProgress: (i, file, done, total) => {
           if (total) $("#loading").textContent = "게임 파일 푸는 중… " + Math.round(done / total * 100) + "% (" + file + ")";
@@ -819,7 +833,7 @@
     return n ? (n.size || 0) : 0;
   }
   async function quickSave() {
-    if (!ci || !useX || qsBusy) return;
+    if (!ci || !xActive || qsBusy) return;
     qsBusy = true; toast("퀵세이브 중…", 4000);
     try {
       await ci.fsWriteFile(QS_FILE, new Uint8Array(0));
@@ -840,7 +854,7 @@
     finally { qsBusy = false; }
   }
   async function quickLoad() {
-    if (!ci || !useX || qsBusy) return;
+    if (!ci || !xActive || qsBusy) return;
     if (!qsAt) { toast("아직 퀵세이브가 없어요", 1600); return; }
     const now = Date.now();
     if (now - qlArm > 2500) { qlArm = now; toast("한 번 더 누르면 " + hhmm(qsAt) + " 퀵세이브로 돌아가요", 2500); return; }
