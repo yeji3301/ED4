@@ -202,7 +202,10 @@
   #game.land .k.fn { height: 26px; }
   #game.land ~ #toast, #game.land #toast { top: calc(14px + var(--sat)); }
   /* 회전 보기: 폰을 돌리지 않아도 가로 화면으로 */
-  #game.rot { inset: auto; top: 0; left: 0; transform-origin: 0 0; }
+  #game.rot { inset: auto; top: 0; left: 0; transform-origin: 0 0;
+    /* 90° 돌린 화면: 화면 왼쪽=폰 위(상태 표시줄), 위=폰 오른쪽, 오른쪽=폰 아래, 아래=폰 왼쪽 */
+    --sal: max(env(safe-area-inset-top, 0px), 20px); --sat: env(safe-area-inset-right, 0px);
+    --sar: env(safe-area-inset-bottom, 0px); --sab: env(safe-area-inset-left, 0px); }
   /* 전체화면(몰입) 모드: 도구 막대를 숨기고 작은 나가기 버튼만 */
   #game.imm #toolbar { display: none; }
   #immExit { display: none; position: absolute; top: calc(8px + var(--sat)); right: calc(8px + var(--sar)); z-index: 30;
@@ -210,7 +213,7 @@
   #immExit svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   #game.imm #immExit { display: grid; }
   #game.land #immExit { top: auto; bottom: calc(8px + var(--sab)); right: calc(8px + var(--sar)); }
-  #game.rot #immExit { bottom: 8px; right: 8px; }
+  #game.rot #immExit { bottom: calc(8px + var(--sab)); right: calc(8px + var(--sar)); }
 </style>
 </head>
 <body>
@@ -247,7 +250,7 @@
       </button>
     </div>
     <div class="grp">
-      <button class="tb" id="tbSave" title="세이브 백업">
+      <button class="tb" id="tbSave" title="게임 세이브를 기기에 백업">
         <svg viewBox="0 0 24 24"><path d="M5 3.5h11l3.5 3.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M7.5 3.5v5h8v-5M7.5 20.5v-6h9v6"/></svg>
       </button>
       <button class="tb" id="tbRot" title="가로/세로 전환">
@@ -751,8 +754,8 @@
         const files = await collectChangedFiles();
         if (files.length) {
           const ok = await kvSet("saves", { files, at: Date.now() });
-          if (showToast) toast(ok ? "세이브를 이 기기에 백업했어요 (" + files.length + "개 파일)" : "브라우저 저장소를 쓸 수 없어요", 1800);
-        } else if (showToast) toast("백업할 변경 사항이 없어요", 1400);
+          if (showToast) toast(ok ? "게임 세이브 " + files.length + "개 파일을 기기에 백업했어요 · 불러오기는 타이틀의 '로드하여 계속한다'" : "브라우저 저장소를 쓸 수 없어요", 3200);
+        } else if (showToast) toast("아직 게임 안에서 저장한 기록이 없어요 · 먼저 게임 메뉴에서 세이브하세요", 2600);
         return true;
       }
       const changes = await ci.persist(true);
