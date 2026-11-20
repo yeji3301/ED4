@@ -129,6 +129,7 @@
   }
   .abtn small { display: block; font-size: 10px; font-weight: 500; color: rgba(255,255,255,.55); margin-top: 1px; }
   .abtn .in { text-align: center; line-height: 1.1; }
+  body.classic .xonly, body:not(.classic) .conly { display: none !important; }
   .abtn.down, .pill.down { background: var(--pad-down); }
   .abtn.a { right: 0; top: 52px; }
   .abtn.b { right: 52px; top: 104px; }
@@ -250,7 +251,13 @@
       </button>
     </div>
     <div class="grp">
-      <button class="tb" id="tbSave" title="게임 세이브를 기기에 백업">
+      <button class="tb xonly" id="tbQSave" title="퀵세이브">
+        <svg viewBox="0 0 24 24"><path d="M5 3.5h11l3.5 3.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M13 8l-3 5h4l-3 5"/></svg>
+      </button>
+      <button class="tb xonly" id="tbQLoad" title="퀵로드">
+        <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/><path d="M12 8v4l3 2"/></svg>
+      </button>
+      <button class="tb conly" id="tbSave" title="게임 세이브를 기기에 백업">
         <svg viewBox="0 0 24 24"><path d="M5 3.5h11l3.5 3.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M7.5 3.5v5h8v-5M7.5 20.5v-6h9v6"/></svg>
       </button>
       <button class="tb" id="tbRot" title="가로/세로 전환">
@@ -284,6 +291,8 @@
           <div class="pill" data-key="258">Tab</div>
           <div class="pill" data-key="290">F1</div>
           <div class="pill" data-key="340">Shift</div>
+          <div class="pill xonly" data-act="qsave">퀵저장</div>
+          <div class="pill xonly" data-act="qload">퀵로드</div>
         </div>
         <div class="abtns" id="abtns">
           <div class="abtn a" data-key="257"><div class="in">A<small>Enter</small></div></div>
@@ -310,6 +319,9 @@
       </div>
       <div class="row"><span>소리</span>
         <div class="seg" id="segSound"><button data-v="on" class="on">켜기</button><button data-v="off">끄기</button></div>
+      </div>
+      <div class="row"><span>엔진</span>
+        <div class="seg" id="segEngine"><button data-v="x" class="on">퀵세이브 지원</button><button data-v="classic">기본</button></div>
       </div>
       <div class="row"><span>패드 크기</span>
         <div class="seg" id="segPadSize"><button data-v="s">작게</button><button data-v="m" class="on">보통</button><button data-v="l">크게</button></div>
@@ -361,6 +373,8 @@
     } catch (e) { return false; }
   }
   const prefs = (() => { try { return JSON.parse(localStorage.getItem("ed4-prefs") || "{}"); } catch (e) { return {}; } })();
+  const useX = prefs.engine !== "classic";
+  document.body.classList.toggle("classic", !useX);
   function savePrefs() { try { localStorage.setItem("ed4-prefs", JSON.stringify(prefs)); } catch (e) {} }
   let launchNo = 0;
   try { launchNo = (+localStorage.getItem("ed4-launch") || 0) + 1; localStorage.setItem("ed4-launch", launchNo); } catch (e) {}
@@ -381,6 +395,7 @@
     });
   }
   bindSeg($("#segSpeed"), prefs.speed || "auto", v => { prefs.speed = v; savePrefs(); });
+  bindSeg($("#segEngine"), useX ? "x" : "classic", v => { prefs.engine = v; savePrefs(); toast("게임을 다시 열면 적용돼요", 2000); });
 
   // 보관된 zip이 있으면 바로 실행 (설정에서 '다른 zip 불러오기'를 누른 경우만 시작 화면 표시)
   // ---- zip을 16MB 조각으로 나눠 브라우저 저장소에 보관 (큰 파일 한 덩어리 저장이 실패하는 iOS 대응)
@@ -639,6 +654,7 @@
     return best; // 예: ["영웅전설4","GAME","ED4"] 또는 ["ed4"] 또는 []
   }
 
+  const QS_FILE = "ED4QUICK.SAV";
   function dosboxConf(layout) {
     const cycles = { slow: "fixed 12000", auto: "auto", fast: "max" }[prefs.speed || "auto"];
     const dir = layout || [];
@@ -652,6 +668,7 @@
     return [
       "[sdl]", "autolock=false", "fullscreen=false",
       "[dosbox]", "machine=svga_s3", "memsize=16",
+    ].concat(useX ? ["savefile=" + QS_FILE, "forceloadstate=true"] : [], [
       "[render]", "aspect=false",
       "[cpu]", "core=auto", "cputype=auto", "cycles=" + cycles,
       "[mixer]", "nosound=false", "rate=22050", "blocksize=512", "prebuffer=20",
@@ -660,7 +677,7 @@
       "[gus]", "gus=false",
       "[dos]", "xms=true", "ems=true", "umb=true", "files=127",
       "[autoexec]", "@echo off",
-    ].concat(auto).join("\n");
+    ]).concat(auto).join("\n");
   }
 
   async function start(gameBytes) {
@@ -675,12 +692,21 @@
       emulators.pathPrefix = new URL("./", location.href).href;
       let layout = null, init;
       if (gameBytes.files) {
-        layout = gameBytes.layout;
+        // 폴더 이름에 한글이 있으면 DOSBox-X가 경로를 못 읽어서 영문 이름으로 바꿔 넘김
+        const lay0 = gameBytes.layout || [];
+        layout = lay0.map((c, k) => /^[\x21-\x7e]+$/.test(c) ? c : "R" + k);
+        const fixPath = (path) => {
+          const parts = path.split("/");
+          for (let k = 0; k < lay0.length && k < parts.length - 1; k++) { if (parts[k] === lay0[k]) parts[k] = layout[k]; else break; }
+          return parts.join("/");
+        };
+        if (gameBytes.layout) gameBytes.files.forEach(x => { x.path = fixPath(x.path); }); else layout = gameBytes.layout;
         init = gameBytes.files.map(x => ({ path: x.path, contents: x.contents }));
         init.push({ dosboxConf: dosboxConf(layout), jsdosConf: { version: "8" } });
         origIndex = new Map(gameBytes.files.map(x => [x.path, { size: x.contents.length, crc: x.crc }]));
         const saved = await kvGet("saves");
-        if (saved && saved.files) for (const sf of saved.files) init.push({ path: sf.path, contents: sf.contents });
+        if (saved && saved.files) for (const sf of saved.files) init.push({ path: fixPath(sf.path), contents: sf.contents });
+        if (useX) { const q = await kvGet("quick"); if (q && q.contents && q.contents.length) { init.push({ path: QS_FILE, contents: q.contents }); qsAt = q.at; } }
         $("#loading").textContent = "에뮬레이터로 파일 넘기는 중… (" + sizeMB + "MB)";
       } else {
         try { layout = findLayout(gameBytes); } catch (e) {}
@@ -688,7 +714,9 @@
       }
       window.__layout = layout;
       if (!gameBytes.files) { const changes = await kvGet("changes"); if (changes && changes.length) init.push(changes); }
-      ci = await emulators.dosboxWorker(init, {
+      const engine = (useX ? emulators.dosboxXWorker : emulators.dosboxWorker).bind(emulators);
+      window.__engine = useX ? "dosbox-x" : "dosbox";
+      ci = await engine(init, {
         onExtractProgress: (i, file, done, total) => {
           if (total) $("#loading").textContent = "게임 파일 푸는 중… " + Math.round(done / total * 100) + "% (" + file + ")";
         },
@@ -735,7 +763,7 @@
       for (const ch of node.nodes || []) {
         const path = base ? base + "/" + ch.name : ch.name;
         if (ch.nodes) { if (ch.name !== ".jsdos") await walk(ch, path); continue; }
-        if (ch.size === null || ch.size > 512 * 1024) continue;
+        if (ch.size === null || ch.size > 512 * 1024 || ch.name === QS_FILE) continue;
         const o = origIndex.get(path);
         if (o && o.size === ch.size && o.size > 64 * 1024) continue; // 크기 같은 큰 파일은 게임 데이터로 보고 건너뜀
         const contents = await ci.fsReadFile(path);
@@ -767,6 +795,62 @@
     } catch (e) { if (showToast) toast("백업 실패: " + e.message, 2000); return false; }
     finally { saving = false; }
   }
+
+  // ── 퀵세이브 / 퀵로드 (DOSBox-X 상태 저장) ──
+  let qsBusy = false, qsAt = 0, qlArm = 0;
+  const hhmm = (t) => { const d = new Date(t); return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  async function qsSize() {
+    const t = await ci.fsTree();
+    const n = (t.nodes || []).find(x => x.name === QS_FILE);
+    return n ? (n.size || 0) : 0;
+  }
+  async function quickSave() {
+    if (!ci || !useX || qsBusy) return;
+    qsBusy = true; toast("퀵세이브 중…", 4000);
+    try {
+      await ci.fsWriteFile(QS_FILE, new Uint8Array(0));
+      ci.sendBackendEvent({ type: "wc-trigger-event", event: "hand_savestate" });
+      let last = -1, size = 0;
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 250));
+        size = await qsSize();
+        if (size > 0 && size === last) break;
+        last = size;
+      }
+      if (!size) throw new Error("저장 파일이 만들어지지 않았어요");
+      const contents = await ci.fsReadFile(QS_FILE);
+      qsAt = Date.now();
+      const ok = await kvSet("quick", { contents, at: qsAt });
+      toast(ok ? "퀵세이브 완료 (" + hhmm(qsAt) + ")" : "퀵세이브는 됐지만 기기에 보관하지 못했어요", 1800);
+    } catch (e) { toast("퀵세이브 실패: " + e.message, 2400); }
+    finally { qsBusy = false; }
+  }
+  async function quickLoad() {
+    if (!ci || !useX || qsBusy) return;
+    if (!qsAt) { toast("아직 퀵세이브가 없어요", 1600); return; }
+    const now = Date.now();
+    if (now - qlArm > 2500) { qlArm = now; toast("한 번 더 누르면 " + hhmm(qsAt) + " 퀵세이브로 돌아가요", 2500); return; }
+    qlArm = 0; qsBusy = true;
+    try {
+      if (!(await qsSize())) {
+        const q = await kvGet("quick");
+        if (!q || !q.contents) throw new Error("저장된 퀵세이브를 찾지 못했어요");
+        await ci.fsWriteFile(QS_FILE, q.contents);
+      }
+      releaseAll();
+      ci.sendBackendEvent({ type: "wc-trigger-event", event: "hand_loadstate" });
+      toast("퀵로드 (" + hhmm(qsAt) + ")", 1500);
+    } catch (e) { toast("퀵로드 실패: " + e.message, 2400); }
+    finally { qsBusy = false; }
+  }
+  $("#tbQSave").addEventListener("click", quickSave);
+  $("#tbQLoad").addEventListener("click", quickLoad);
+  document.querySelectorAll("[data-act]").forEach(el => {
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); el.classList.add("down"); });
+    const up = (e) => { e.preventDefault(); e.stopPropagation(); if (!el.classList.contains("down")) return; el.classList.remove("down");
+      if (e.type === "pointerup") (el.dataset.act === "qsave" ? quickSave : quickLoad)(); };
+    el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up); el.addEventListener("pointerleave", up);
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (!ci) return;
