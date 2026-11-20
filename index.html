@@ -1117,8 +1117,11 @@
     dp.style.transform = ab.style.transform = "scale(" + scale + ")";
     if (landscape) {
       dp.style.transformOrigin = "left bottom"; ab.style.transformOrigin = "right bottom";
-      dp.style.left = "calc(22px + var(--sal))"; dp.style.top = ""; dp.style.bottom = "calc(22px + var(--sab))";
-      ab.style.right = "calc(70px + var(--sar))"; ab.style.top = ""; ab.style.bottom = "calc(18px + var(--sab))";
+      // 패드를 가장자리에서 안쪽으로 당겨 엄지가 닿기 편한 위치로
+      const inX = Math.round(40 + Math.max(0, W - 700) * 0.25), inY = Math.round(Math.max(22, H * 0.12));
+      const tbW = gameEl.classList.contains("imm") ? 0 : 48;
+      dp.style.left = "calc(" + inX + "px + var(--sal))"; dp.style.top = ""; dp.style.bottom = "calc(" + inY + "px + var(--sab))";
+      ab.style.right = "calc(" + (inX + tbW) + "px + var(--sar))"; ab.style.top = ""; ab.style.bottom = "calc(" + (inY - 4) + "px + var(--sab))";
       pills.style.top = ""; pills.style.bottom = "calc(10px + var(--sab))";
     } else {
       const cy = Math.max(110, ($("#controls").offsetHeight || 300) * 0.5);
