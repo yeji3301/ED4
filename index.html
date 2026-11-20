@@ -207,6 +207,8 @@
     /* 90° 돌린 화면: 화면 왼쪽=폰 위(상태 표시줄), 위=폰 오른쪽, 오른쪽=폰 아래, 아래=폰 왼쪽 */
     --sal: max(env(safe-area-inset-top, 0px), 20px); --sat: env(safe-area-inset-right, 0px);
     --sar: env(safe-area-inset-bottom, 0px); --sab: env(safe-area-inset-left, 0px); }
+  /* 홈 화면 앱에서 양 끝이 이미 비어 있을 때는 추가 여백 없이 */
+  #game.rot.rotgap { --sal: 6px; --sar: 6px; }
   /* 전체화면(몰입) 모드: 도구 막대를 숨기고 작은 나가기 버튼만 */
   #game.imm #toolbar { display: none; }
   #immExit { display: none; position: absolute; top: calc(8px + var(--sat)); right: calc(8px + var(--sar)); z-index: 30;
@@ -1106,21 +1108,20 @@
   const gameEl = $("#game");
   function placeRot() {
     if (rotOn) {
-      // 홈 화면 앱에서는 visualViewport가 화면보다 작게 잡혀 오른쪽에 검은 띠가 생김 → 실제 화면 크기를 씀
-      let probe = document.getElementById("vpProbe");
-      if (!probe) { probe = document.createElement("div"); probe.id = "vpProbe";
-        probe.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;visibility:hidden;pointer-events:none;z-index:-1";
-        document.body.appendChild(probe); }
-      const pr = probe.getBoundingClientRect();
+      const vw = window.visualViewport ? Math.round(visualViewport.width) : innerWidth;
+      const vh = window.visualViewport ? Math.round(visualViewport.height) : innerHeight;
+      // 홈 화면 앱(iOS)은 화면 아래쪽 일부(상태표시줄 높이만큼)를 그리지 못하는 경우가 있음.
+      // 그 빈 띠만큼 반대쪽(상태표시줄 쪽)도 비워서 화면이 가운데 오도록 맞춤
       const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
-      let vw = Math.max(Math.round(pr.width), innerWidth, window.visualViewport ? Math.round(visualViewport.width) : 0);
-      let vh = Math.max(Math.round(pr.height), innerHeight, window.visualViewport ? Math.round(visualViewport.height) : 0);
-      if (standalone && innerWidth < innerHeight && screen.width && screen.height) { vw = Math.max(vw, Math.min(screen.width, screen.height)); vh = Math.max(vh, Math.max(screen.width, screen.height)); }
+      const longSide = Math.max(screen.width || 0, screen.height || 0);
+      let gap = standalone && innerWidth < innerHeight ? longSide - vh : 0;
+      if (!(gap > 8 && gap < 120)) gap = 0;
       gameEl.classList.add("rot");
-      gameEl.style.width = vh + "px"; gameEl.style.height = vw + "px";
-      gameEl.style.transform = "translate(" + vw + "px, 0) rotate(90deg)";
+      gameEl.style.width = (vh - gap) + "px"; gameEl.style.height = vw + "px";
+      gameEl.style.transform = "translate(" + vw + "px, " + gap + "px) rotate(90deg)";
+      gameEl.classList.toggle("rotgap", gap > 0);
     } else {
-      gameEl.classList.remove("rot");
+      gameEl.classList.remove("rot", "rotgap");
       gameEl.style.width = gameEl.style.height = gameEl.style.transform = "";
     }
   }
