@@ -198,6 +198,7 @@
   #game.land #kbd { pointer-events: auto; }
   #game.land #pad { pointer-events: none; }
   #game.land #pad .dpad, #game.land #pad .abtns, #game.land #pad .pills { pointer-events: auto; opacity: .5; }
+  .qpills .pill { min-width: 58px; border-color: rgba(120,170,255,.55); }
   #game.land #kbd { background: rgba(14,15,17,.72); right: calc(58px + var(--sar)); padding-right: 4px; gap: 4px; }
   #game.land .k { height: 32px; font-size: 12px; }
   #game.land .k.fn { height: 26px; }
@@ -293,8 +294,10 @@
           <div class="pill" data-key="258">Tab</div>
           <div class="pill" data-key="290">F1</div>
           <div class="pill" data-key="340">Shift</div>
-          <div class="pill xonly" data-act="qsave">퀵저장</div>
-          <div class="pill xonly" data-act="qload">퀵로드</div>
+        </div>
+        <div class="pills qpills xonly" id="qpills">
+          <div class="pill" data-act="qsave">퀵저장</div>
+          <div class="pill" data-act="qload">퀵로드</div>
         </div>
         <div class="abtns" id="abtns">
           <div class="abtn a" data-key="257"><div class="in">A<small>Enter</small></div></div>
@@ -332,6 +335,11 @@
         <button class="btn secondary" id="btnClose">닫기</button>
         <button class="btn danger" id="btnQuit">세이브 백업 후 종료</button>
       </div>
+      <div class="actions">
+        <button class="btn secondary" id="btnSaveExport">세이브 파일 내보내기</button>
+        <button class="btn secondary" id="btnSaveImport">세이브 파일 가져오기</button>
+      </div>
+      <input type="file" id="saveFile" hidden>
       <div class="actions">
         <button class="btn secondary" id="btnOther">다른 zip 불러오기</button>
       </div>
@@ -826,6 +834,92 @@
     finally { saving = false; }
   }
 
+  // ── 세이브 파일 내보내기 / 가져오기 ──
+  // 게임 폴더(GAME.BAT 있는 곳) 기준 상대 경로로 주고받음
+  const gameRoot = () => (window.__layout && window.__layout.length ? window.__layout.join("/") + "/" : "");
+  function zipStore(entries) {
+    const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+    for (const e of entries) {
+      const name = enc.encode(e.name), d = e.data, crc = crc32(d);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+      lh.setUint32(14, crc, true); lh.setUint32(18, d.length, true); lh.setUint32(22, d.length, true); lh.setUint16(26, name.length, true);
+      parts.push(new Uint8Array(lh.buffer), name, d);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+      ch.setUint32(16, crc, true); ch.setUint32(20, d.length, true); ch.setUint32(24, d.length, true); ch.setUint16(28, name.length, true);
+      ch.setUint32(42, off, true);
+      cen.push(new Uint8Array(ch.buffer), name);
+      off += 30 + name.length + d.length;
+    }
+    const cenSize = cen.reduce((a, b) => a + b.length, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+    end.setUint32(12, cenSize, true); end.setUint32(16, off, true);
+    return new Blob([...parts, ...cen, new Uint8Array(end.buffer)], { type: "application/zip" });
+  }
+  async function unzipSmall(u8) {
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength); let eo = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eo = i; break; }
+    if (eo < 0) return null;
+    const n = dv.getUint16(eo + 10, true); let p = dv.getUint32(eo + 16, true); const out = [];
+    for (let k = 0; k < n; k++) {
+      const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+      const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+      const nameB = u8.subarray(p + 46, p + 46 + nl);
+      let name; try { name = new TextDecoder("utf-8", { fatal: true }).decode(nameB); } catch (e) { name = new TextDecoder("euc-kr").decode(nameB); }
+      p += 46 + nl + xl + cl;
+      if (name.endsWith("/")) continue;
+      const ds = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true);
+      const raw = u8.subarray(ds, ds + csize);
+      const data = method === 0 ? raw.slice() : method === 8 ? await inflateRaw(raw) : null;
+      if (data) out.push({ name: name.replace(/^\/+/, ""), data });
+    }
+    return out;
+  }
+  async function currentSaveFiles() {
+    let files = null;
+    if (ci && origIndex) { try { files = await collectChangedFiles(); } catch (e) {} }
+    if (!files) { const s = await kvGet("saves"); files = (s && s.files) || []; }
+    const root = gameRoot();
+    return files.map(f => ({ name: root && f.path.startsWith(root) ? f.path.slice(root.length) : f.path, data: f.contents }));
+  }
+  $("#btnSaveExport").addEventListener("click", async () => {
+    try {
+      const files = await currentSaveFiles();
+      if (!files.length) { toast("아직 게임 안에서 저장한 세이브가 없어요", 2200); return; }
+      const d = new Date(), stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + "_" + String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0");
+      const fname = "영웅전설4_세이브_" + stamp + ".zip";
+      const file = new File([zipStore(files)], fname, { type: "application/zip" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: fname }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+      }
+      const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = fname;
+      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    } catch (e) { toast("내보내기 실패: " + e.message, 2400); }
+  });
+  $("#btnSaveImport").addEventListener("click", () => { $("#saveFile").value = ""; $("#saveFile").click(); });
+  $("#saveFile").addEventListener("change", async (ev) => {
+    const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    try {
+      const u8 = new Uint8Array(await f.arrayBuffer());
+      let items = await unzipSmall(u8);
+      if (!items) items = [{ name: "SAVE/" + f.name.toUpperCase(), data: u8 }];
+      items = items.filter(x => x.data && x.data.length <= 512 * 1024 && !x.name.split("/").includes(".."));
+      if (!items.length) { toast("세이브 파일을 찾지 못했어요", 2200); return; }
+      const root = gameRoot();
+      const saved = (await kvGet("saves")) || { files: [] };
+      const map = new Map((saved.files || []).map(x => [x.path, x]));
+      for (const it of items) {
+        const path = root + it.name;
+        map.set(path, { path, contents: it.data });
+        if (ci) await ci.fsWriteFile(path, it.data);
+      }
+      await kvSet("saves", { files: [...map.values()], at: Date.now() });
+      toast("세이브 " + items.length + "개를 가져왔어요 · 타이틀의 '로드하여 계속한다'로 불러오세요", 3600);
+    } catch (e) { toast("가져오기 실패: " + e.message, 2600); }
+  });
+
   // ── 퀵세이브 / 퀵로드 (DOSBox-X 상태 저장) ──
   let qsBusy = false, qsAt = 0, qlArm = 0;
   const hhmm = (t) => { const d = new Date(t); return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0"); };
@@ -1150,7 +1244,7 @@
     }
     canvas.style.width = Math.floor(w) + "px"; canvas.style.height = Math.floor(h) + "px";
 
-    const dp = $("#dpad"), ab = $("#abtns"), pills = $("#pills");
+    const dp = $("#dpad"), ab = $("#abtns"), pills = $("#pills"), qp = $("#qpills");
     dp.style.transform = ab.style.transform = "scale(" + scale + ")";
     if (landscape) {
       dp.style.transformOrigin = "left bottom"; ab.style.transformOrigin = "right bottom";
@@ -1162,12 +1256,15 @@
       dp.style.left = "calc(" + inX + "px + " + side + ")"; dp.style.top = ""; dp.style.bottom = "calc(" + inY + "px + var(--sab))";
       ab.style.right = "calc(" + (inX + tbW) + "px + " + side + ")"; ab.style.top = ""; ab.style.bottom = "calc(" + (inY - 4) + "px + var(--sab))";
       pills.style.top = ""; pills.style.bottom = "calc(10px + var(--sab))";
+      // 퀵저장/퀵로드는 실수로 누르지 않게 화면 위쪽 가운데로 따로 뺌
+      qp.style.bottom = ""; qp.style.top = "calc(8px + var(--sat))";
     } else {
       const cy = Math.max(110, ($("#controls").offsetHeight || 300) * 0.5);
       dp.style.transformOrigin = "left center"; ab.style.transformOrigin = "right center";
       dp.style.left = "calc(20px + var(--sal))"; dp.style.bottom = ""; dp.style.top = (cy - 84) + "px";
       ab.style.right = "calc(18px + var(--sar))"; ab.style.bottom = ""; ab.style.top = (cy - 85) + "px";
       pills.style.bottom = ""; pills.style.top = "14px";
+      qp.style.top = ""; qp.style.bottom = "calc(12px + var(--sab))";
     }
   }
   // 회전·주소창 변화·앱 안 웹뷰 크기 변화를 모두 잡도록 여러 신호에 연결
