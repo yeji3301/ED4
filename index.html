@@ -600,7 +600,10 @@
 
   // ---------- 오디오 ----------
   let actx = null, proc = null, gain = null;
-  let ring = new Float32Array(1 << 16), rHead = 0, rTail = 0, rFrac = 0, srcRate = 22050;
+  let ring = new Float32Array(1 << 16), rHead = 0, rTail = 0, rFrac = 0, srcRate = 22050, starving = true;
+  // 에뮬레이터가 쉬었다 몰아서 소리를 보내도 끊기지 않게 약간의 여유분(약 0.09초)을 두고 재생
+  const AUD_TARGET = 0.09;
+  const audStat = window.__audStat = { under: 0, trim: 0 };
   let soundOn = prefs.sound !== "off";
   function primeAudio() {
     if (actx) { actx.resume && actx.resume(); return; }
@@ -612,10 +615,16 @@
       proc = actx.createScriptProcessor(1024, 0, 1);
       proc.onaudioprocess = (ev) => {
         const out = ev.outputBuffer.getChannelData(0);
-        const step = srcRate / actx.sampleRate, N = ring.length, mask = N - 1;
+        const N = ring.length, mask = N - 1, target = srcRate * AUD_TARGET;
         let avail = (rTail - rHead + N) & mask;
+        // 비었으면 여유분이 다시 찰 때까지 기다렸다가 재생 (조각조각 끊기는 소리 방지)
+        if (starving && avail < target) { out.fill(0); return; }
+        starving = false;
+        // 쌓인 양에 따라 재생 속도를 아주 살짝(최대 ±2.5%) 조절해 버리는 소리 없이 지연을 맞춤
+        const adj = Math.max(-0.025, Math.min(0.025, (avail - target) / target * 0.025));
+        const step = srcRate / actx.sampleRate * (1 + adj);
         for (let i = 0; i < out.length; i++) {
-          if (avail < 2) { out[i] = 0; continue; }
+          if (avail < 2) { out[i] = 0; if (!starving) { starving = true; audStat.under++; } continue; }
           const a = ring[rHead], b = ring[(rHead + 1) & mask];
           out[i] = a + (b - a) * rFrac;
           rFrac += step;
@@ -633,9 +642,9 @@
     if (!actx) return;
     const N = ring.length, mask = N - 1;
     let avail = (rTail - rHead + N) & mask;
-    // 소리가 화면보다 늦지 않게: 쌓인 소리가 0.12초를 넘으면 0.05초만 남기고 버림
-    const maxLag = Math.floor(srcRate * 0.12), keep = Math.floor(srcRate * 0.05);
-    if (avail + samples.length > maxLag) { rHead = (rTail - Math.min(avail, keep) + N) & mask; avail = Math.min(avail, keep); }
+    // 너무 많이 밀렸을 때만(0.35초 이상) 정리. 평소에는 재생 속도 조절로 따라잡음
+    const maxLag = Math.floor(srcRate * 0.35), keep = Math.floor(srcRate * AUD_TARGET);
+    if (avail + samples.length > maxLag) { audStat.trim++; rHead = (rTail - Math.min(avail, keep) + N) & mask; avail = Math.min(avail, keep); }
     window.__audioLagMs = Math.round((avail + samples.length) / srcRate * 1000);
     for (let i = 0; i < samples.length; i++) { ring[rTail] = samples[i]; rTail = (rTail + 1) & mask; }
   }
