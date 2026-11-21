@@ -231,7 +231,7 @@
   <button class="btn" id="btnPick">게임 zip 불러오기</button>
   <div class="opts">속도
     <div class="seg" id="segSpeed">
-      <button data-v="slow">느리게</button><button data-v="auto" class="on">보통</button><button data-v="fast">빠르게</button>
+      <button data-v="slow">절전</button><button data-v="auto" class="on">보통</button><button data-v="fast">최대</button>
     </div>
   </div>
   <div id="status"></div>
@@ -325,6 +325,9 @@
       <div class="row"><span>소리</span>
         <div class="seg" id="segSound"><button data-v="on" class="on">켜기</button><button data-v="off">끄기</button></div>
       </div>
+      <div class="row"><span>속도·배터리</span>
+        <div class="seg" id="segSpeed2"><button data-v="slow">절전</button><button data-v="auto" class="on">보통</button><button data-v="fast">최대</button></div>
+      </div>
       <div class="row"><span>엔진</span>
         <div class="seg" id="segEngine"><button data-v="x" class="on">퀵세이브 지원</button><button data-v="classic">기본</button></div>
       </div>
@@ -406,6 +409,7 @@
     });
   }
   bindSeg($("#segSpeed"), prefs.speed || "auto", v => { prefs.speed = v; savePrefs(); });
+  bindSeg($("#segSpeed2"), prefs.speed || "auto", v => { prefs.speed = v; savePrefs(); toast("게임을 다시 열면 적용돼요", 2000); });
   bindSeg($("#segEngine"), useX ? "x" : "classic", v => { prefs.engine = v; savePrefs(); toast("게임을 다시 열면 적용돼요", 2000); });
 
   // 보관된 zip이 있으면 바로 실행 (설정에서 '다른 zip 불러오기'를 누른 경우만 시작 화면 표시)
@@ -681,7 +685,8 @@
 
   const QS_FILE = "ED4QUICK.SAV";
   function dosboxConf(layout) {
-    const cycles = { slow: "fixed 12000", auto: "auto", fast: "max" }[prefs.speed || "auto"];
+    // 고정 클럭이면 남는 시간엔 에뮬레이터가 쉬어서 발열·배터리 소모가 크게 줄어듦 (auto는 CPU를 계속 끌어올림)
+    const cycles = prefs.cyclesOverride || { slow: "fixed 12000", auto: "fixed 20000", fast: "auto" }[prefs.speed || "auto"];
     const dir = layout || [];
     const q = (parts) => '"' + (parts.length ? parts.join("/") : ".") + '"';
     // DOSBox 패키지 구성(...\GAME\ED4)이면 원래 실행 파일처럼 GAME 폴더를 D: CD-ROM으로도 연결
