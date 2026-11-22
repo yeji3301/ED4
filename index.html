@@ -199,6 +199,8 @@
   #game.land #pad { pointer-events: none; }
   #game.land #pad .dpad, #game.land #pad .abtns, #game.land #pad .pills { pointer-events: auto; opacity: .5; }
   .qpills .pill { min-width: 58px; border-color: rgba(120,170,255,.55); }
+  .qpills .pill.mp { border-color: rgba(255,200,90,.55); }
+  .qpills .pill.mp.on { background: rgba(255,180,60,.75); color: #1a1205; border-color: rgba(255,210,120,.95); font-weight: 700; }
   #game.land #kbd { background: rgba(14,15,17,.72); right: calc(58px + var(--sar)); padding-right: 4px; gap: 4px; }
   #game.land .k { height: 32px; font-size: 12px; }
   #game.land .k.fn { height: 26px; }
@@ -295,9 +297,10 @@
           <div class="pill" data-key="290">F1</div>
           <div class="pill" data-key="340">Shift</div>
         </div>
-        <div class="pills qpills xonly" id="qpills">
-          <div class="pill" data-act="qsave">퀵저장</div>
-          <div class="pill" data-act="qload">퀵로드</div>
+        <div class="pills qpills" id="qpills">
+          <div class="pill xonly" data-act="qsave">퀵저장</div>
+          <div class="pill xonly" data-act="qload">퀵로드</div>
+          <div class="pill mp" id="pMp">MP 고정</div>
         </div>
         <div class="abtns" id="abtns">
           <div class="abtn a" data-key="257"><div class="in">A<small>Enter</small></div></div>
@@ -775,6 +778,7 @@
       });
       // 에뮬레이터로 넘긴 뒤에는 이쪽 사본을 놓아 메모리 확보
       init.length = 0; gameBytes = null;
+      if (prefs.mpFreeze) { try { ci.sendBackendEvent({ type: "ed4-mpfreeze", on: true }); } catch (e) {} }
       const ev = ci.events();
       ev.onFrameSize((w, h) => { canvas.width = w; canvas.height = h; img = ctx2d.createImageData(w, h); applyLayout(); });
       ev.onFrame((rgb, rgba) => { pendingRgb = rgb; pendingRgba = rgba; drawNow(); });
@@ -847,6 +851,19 @@
     } catch (e) { if (showToast) toast("백업 실패: " + e.message, 2000); return false; }
     finally { saving = false; }
   }
+
+  // ── MP 고정 (켜 두면 파티 전원의 MP가 줄지 않음) ──
+  const pMp = $("#pMp");
+  pMp.classList.toggle("on", !!prefs.mpFreeze);
+  function setMpFreeze(on) {
+    prefs.mpFreeze = on; savePrefs(); pMp.classList.toggle("on", on);
+    if (ci) { try { ci.sendBackendEvent({ type: "ed4-mpfreeze", on }); } catch (e) {} }
+    toast(on ? "MP 고정 켬 · 마법을 써도 MP가 줄지 않아요" : "MP 고정 끔", 1600);
+  }
+  pMp.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); pMp.classList.add("down"); });
+  pMp.addEventListener("pointerup", (e) => { e.preventDefault(); e.stopPropagation(); if (!pMp.classList.contains("down")) return; pMp.classList.remove("down"); setMpFreeze(!prefs.mpFreeze); });
+  pMp.addEventListener("pointercancel", () => pMp.classList.remove("down"));
+  pMp.addEventListener("pointerleave", () => pMp.classList.remove("down"));
 
   // ── 세이브 파일 내보내기 / 가져오기 ──
   // 게임 폴더(GAME.BAT 있는 곳) 기준 상대 경로로 주고받음
