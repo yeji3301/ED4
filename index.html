@@ -913,7 +913,10 @@
     if (ci && origIndex) { try { files = await collectChangedFiles(); } catch (e) {} }
     if (!files) { const s = await kvGet("saves"); files = (s && s.files) || []; }
     const root = gameRoot();
-    return files.map(f => ({ name: root && f.path.startsWith(root) ? f.path.slice(root.length) : f.path, data: f.contents }));
+    const out = files.map(f => ({ name: root && f.path.startsWith(root) ? f.path.slice(root.length) : f.path, data: f.contents }));
+    // 퀵세이브(에뮬레이터 상태)도 같이 내보냄 — 문제를 그 장면 그대로 확인할 수 있게. 가져오기에서는 크기 때문에 자동으로 빠짐
+    if (ci && xActive) { try { if (await qsSize()) out.push({ name: QS_FILE, data: await ci.fsReadFile(QS_FILE) }); } catch (e) {} }
+    return out;
   }
   $("#btnSaveExport").addEventListener("click", async () => {
     try {
